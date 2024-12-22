@@ -1,0 +1,26 @@
+name: Test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version-file: 'go.mod'
+    - name: Run tests
+      # ./cmd/wsl-open-proxy can only be built for Windows
+      run: |
+        go test -v . ./xdgini ./cmd/setup-wsl-open
+    - name: Ensure it successfully builds
+      run: ./build.sh
+    - name: Check formatting
+      run: |
+        go fmt ./...
+        git diff --exit-code
