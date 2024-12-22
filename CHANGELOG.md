@@ -1,3 +1,8 @@
+## 0.1.2
+
+- Misc
+  - Fix GitHub Actions so that the token has necessary privileges for releasing
+
 ## 0.1.1
 
 - Fixed
