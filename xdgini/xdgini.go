@@ -11,9 +11,34 @@ type Config struct {
 	EndRaw *RawLineStyle
 }
 
+func (c *Config) CreateGroup(name string) *ConfigGroup {
+	if group, ok := c.Groups[name]; ok {
+		return group
+	} else {
+		group = &ConfigGroup{
+			Entries: map[string]*ConfigEntry{},
+		}
+		c.Groups[name] = group
+		return group
+	}
+}
+
 type ConfigGroup struct {
 	Entries map[string]*ConfigEntry
 	Raws    []*RawLineStyle
+}
+
+func (g *ConfigGroup) CreateEntry(key string, value string) *ConfigEntry {
+	if entry, ok := g.Entries[key]; ok {
+		entry.Value = value
+		return entry
+	} else {
+		entry = &ConfigEntry{
+			Value: value,
+		}
+		g.Entries[key] = entry
+		return entry
+	}
 }
 
 type ConfigEntry struct {
@@ -201,7 +226,7 @@ func (c *Config) String() string {
 				return 1
 			}
 			if a.Entry != nil && b.Entry != nil {
-				keyCmp := strings.Compare(a.Entry.Value, b.Entry.Value)
+				keyCmp := strings.Compare(a.Line, b.Line)
 				if keyCmp != 0 {
 					return keyCmp
 				}
@@ -303,5 +328,16 @@ func parseKeyValueLine(line string) (key string, value string) {
 		return tLine, ""
 	} else {
 		return strings.TrimSpace(tLine[:eqPos]), strings.TrimSpace(tLine[eqPos+1:])
+	}
+}
+
+func WithOrder(order int) []*RawLineStyle {
+	return []*RawLineStyle{{Order: order}}
+}
+
+func OrderedValue(value string, order int) *ConfigEntry {
+	return &ConfigEntry{
+		Value: value,
+		Raws:  WithOrder(order),
 	}
 }
