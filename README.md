@@ -41,6 +41,10 @@ When developing setup-wsl-open in Linux using VS Code, the following configurati
 
 ## Releasing
 
+1. Update version.go
+2. Tag the version using `v0.0.0` format
+3. Generate the prebuilt command and upload:
+
 ```console
 $ ./prebuild.sh
 $ GOOS=... GOARCH=... go build ./cmd/setup-wsl-open
