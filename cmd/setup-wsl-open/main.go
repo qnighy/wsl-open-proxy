@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path"
 	"runtime"
+	"strings"
 
 	"github.com/adrg/xdg"
 	"github.com/c-bata/go-prompt"
@@ -23,7 +24,39 @@ import (
 //go:embed assets/*.keep assets/*
 var assets embed.FS
 
+type mimeEntry = struct {
+	extension string
+	mimeTypes []string
+}
+
+var mediaGroups = map[string][]mimeEntry{
+	"html": {
+		{".html", []string{"text/html", "x-scheme-handler/unknown", "x-scheme-handler/about", "x-scheme-handler/https", "x-scheme-handler/http"}},
+	},
+	"pdf": {
+		{".pdf", []string{"application/pdf"}},
+	},
+	"image": {
+		{".png", []string{"image/png"}},
+		{".jpg", []string{"image/jpeg"}},
+		{".gif", []string{"image/gif"}},
+		{".bmp", []string{"image/bmp"}},
+		{".svg", []string{"image/svg+xml"}},
+	},
+	"audio": {
+		{".mp3", []string{"audio/mpeg"}},
+		{".wav", []string{"audio/wav"}},
+		{".ogg", []string{"audio/ogg"}},
+	},
+	"video": {
+		{".mp4", []string{"video/mp4"}},
+		{".webm", []string{"video/webm"}},
+		{".ogv", []string{"video/ogg"}},
+	},
+}
+
 func main() {
+	mediaGroupName := "html"
 	var rootCmd = &cobra.Command{
 		Use:     "setup-wsl-open",
 		Version: wslopenproxy.Version,
@@ -31,10 +64,19 @@ func main() {
 			if len(args) > 0 {
 				return errors.New("too many arguments")
 			}
+			_, ok := mediaGroups[mediaGroupName]
+			if !ok {
+				return errors.Errorf("Unknown media group: %s", mediaGroupName)
+			}
 			cmd.SilenceUsage = true
-			return run(cmd.Context())
+			return run(cmd.Context(), mediaGroupName)
 		},
 	}
+	mediaGroupNames := make([]string, 0, len(mediaGroups))
+	for name := range mediaGroups {
+		mediaGroupNames = append(mediaGroupNames, name)
+	}
+	rootCmd.Flags().StringVarP(&mediaGroupName, "type", "t", mediaGroupName, fmt.Sprintf("Media group to install (One of: %v)", mediaGroupNames))
 
 	err := rootCmd.Execute()
 	if err != nil {
@@ -43,7 +85,7 @@ func main() {
 	}
 }
 
-func run(ctx context.Context) error {
+func run(ctx context.Context, mediaGroupName string) error {
 	_ = ctx
 
 	exeInstallPath := path.Join(xdg.BinHome, "wsl-open-proxy.exe")
@@ -67,27 +109,35 @@ func run(ctx context.Context) error {
 		}
 	}
 
-	desktopEntry := &xdgini.Config{
-		Groups: map[string]*xdgini.ConfigGroup{
-			"Desktop Entry": {
-				Raws: xdgini.WithOrder(1),
-				Entries: map[string]*xdgini.ConfigEntry{
-					"Type":      xdgini.OrderedValue("Application", 1),
-					"Version":   xdgini.OrderedValue(wslopenproxy.Version, 2),
-					"Name":      xdgini.OrderedValue("WSL Open Proxy (as HTML)", 3),
-					"NoDisplay": xdgini.OrderedValue("true", 4),
-					"Exec":      xdgini.OrderedValue("wsl-open-proxy.exe --ext .html %f", 5),
-					"MimeType":  xdgini.OrderedValue("x-scheme-handler/unknown;x-scheme-handler/about;x-scheme-handler/https;x-scheme-handler/http;text/html;", 6),
+	mediaGroup, ok := mediaGroups[mediaGroupName]
+	if !ok {
+		return errors.Errorf("Unknown media group: %s", mediaGroupName)
+	}
+
+	for _, mimeEntry := range mediaGroup {
+		desktopEntry := &xdgini.Config{
+			Groups: map[string]*xdgini.ConfigGroup{
+				"Desktop Entry": {
+					Raws: xdgini.WithOrder(1),
+					Entries: map[string]*xdgini.ConfigEntry{
+						"Type":      xdgini.OrderedValue("Application", 1),
+						"Version":   xdgini.OrderedValue(wslopenproxy.Version, 2),
+						"Name":      xdgini.OrderedValue(fmt.Sprintf("WSL Open Proxy (%s)", mimeEntry.extension), 3),
+						"NoDisplay": xdgini.OrderedValue("true", 4),
+						"Exec":      xdgini.OrderedValue(fmt.Sprintf("wsl-open-proxy.exe --ext %s %%f", mimeEntry.extension), 5),
+						"MimeType":  xdgini.OrderedValue(strings.Join(mimeEntry.mimeTypes, ";"), 6),
+					},
 				},
 			},
-		},
-	}
-	if err := writeFileWithConfirmation(
-		path.Join(xdg.DataHome, "applications", "wsl-open-proxy-html.desktop"),
-		[]byte(desktopEntry.String()),
-		colored(os.Stderr),
-	); err != nil {
-		return errors.Wrap(err, "failed to write application config")
+		}
+		extensionName := strings.TrimPrefix(mimeEntry.extension, ".")
+		if err := writeFileWithConfirmation(
+			path.Join(xdg.DataHome, "applications", fmt.Sprintf("wsl-open-proxy-%s.desktop", extensionName)),
+			[]byte(desktopEntry.String()),
+			colored(os.Stderr),
+		); err != nil {
+			return errors.Wrap(err, "failed to write application config")
+		}
 	}
 
 	mimeAppsListPath := path.Join(xdg.ConfigHome, "mimeapps.list")
@@ -99,11 +149,12 @@ func run(ctx context.Context) error {
 	}
 	mimeAppsList := xdgini.ParseConfig(string(mimeAppsListText))
 	defaultApplications := mimeAppsList.CreateGroup("Default Applications")
-	defaultApplications.CreateEntry("text/html", "wsl-open-proxy-html.desktop")
-	defaultApplications.CreateEntry("x-scheme-handler/http", "wsl-open-proxy-html.desktop")
-	defaultApplications.CreateEntry("x-scheme-handler/https", "wsl-open-proxy-html.desktop")
-	defaultApplications.CreateEntry("x-scheme-handler/about", "wsl-open-proxy-html.desktop")
-	defaultApplications.CreateEntry("x-scheme-handler/unknown", "wsl-open-proxy-html.desktop")
+	for _, mimeEntry := range mediaGroup {
+		extensionName := strings.TrimPrefix(mimeEntry.extension, ".")
+		for _, mimeType := range mimeEntry.mimeTypes {
+			defaultApplications.CreateEntry(mimeType, fmt.Sprintf("wsl-open-proxy-%s.desktop", extensionName))
+		}
+	}
 	if err := writeFileWithConfirmation(
 		mimeAppsListPath,
 		[]byte(mimeAppsList.String()),
