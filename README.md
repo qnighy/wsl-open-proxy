@@ -39,6 +39,13 @@ When developing setup-wsl-open in Linux using VS Code, the following configurati
 }
 ```
 
+## Releasing
+
+```console
+$ ./prebuild.sh
+$ GOOS=... GOARCH=... go build ./cmd/setup-wsl-open
+```
+
 ## License
 
 Licensed under the MIT License.
