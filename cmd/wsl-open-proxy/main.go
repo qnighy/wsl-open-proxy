@@ -58,9 +58,15 @@ func run(ctx context.Context, file string, ext string) error {
 		return errors.Wrap(err, "error getting executable for file extension")
 	}
 
-	wFile, err := wslpath(ctx, file)
-	if err != nil {
-		return errors.Wrap(err, "error converting file path to Windows absolute path")
+	var wFile string
+	if isLikelyURL(file) {
+		wFile = file
+	} else {
+		var err error
+		wFile, err = wslpath(ctx, file)
+		if err != nil {
+			return errors.Wrap(err, "error converting file path to Windows absolute path")
+		}
 	}
 	cmd := strings.ReplaceAll(strings.ReplaceAll(assoc, "%1", wFile), "%L", wFile)
 
@@ -83,6 +89,28 @@ func wslpath(ctx context.Context, path string) (string, error) {
 		return "", errors.Wrap(err, "error calling wslpath")
 	}
 	return strings.TrimSpace(string(out)), nil
+}
+
+// Well-known schemes used without authority part
+var urlLikePrefixes = []string{
+	"mailto:",
+	"data:",
+	"tel:",
+}
+
+func isLikelyURL(s string) bool {
+	if strings.Contains(s, "://") {
+		// "://" is highly specific to scheme followed by authority part
+		return true
+	}
+	// Otherwise it's not easy to tell URLs from file paths
+	locase := strings.ToLower(s)
+	for _, prefix := range urlLikePrefixes {
+		if strings.HasPrefix(locase, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 const (
