@@ -95,15 +95,30 @@ func run(ctx context.Context, mediaGroupName string) error {
 	} else if err != nil && os.IsNotExist(err) {
 		fmt.Fprintf(os.Stderr, "Building wsl-open-proxy.exe from source...\n")
 		// Not found; alternative installation
-		cmd := exec.Command("go", "build", "-o", exeInstallPath, "github.com/qnighy/wsl-open-proxy/cmd/wsl-open-proxy")
-		// cmd := exec.Command("go", "build", "-o", exeInstallPath, "./cmd/wsl-open-proxy")
+		cmd := exec.Command("go", "install", fmt.Sprintf("github.com/qnighy/wsl-open-proxy/cmd/wsl-open-proxy@v%s", wslopenproxy.Version))
 		cmd.Env = append(os.Environ(), "GOOS=windows", fmt.Sprintf("GOARCH=%s", runtime.GOARCH))
 		_, err := cmd.Output()
 		if err != nil {
 			return errors.Wrap(err, "failed to build wsl-open-proxy.exe from source")
 		}
+
+		fmt.Fprintf(os.Stderr, "Installing wsl-open-proxy.exe built from source...\n")
+		gobin := os.Getenv("GOBIN")
+		if gobin == "" {
+			gopath := os.Getenv("GOPATH")
+			if gopath != "" {
+				gobin = path.Join(os.Getenv("GOPATH"), "bin")
+			} else {
+				gobin = path.Join(os.Getenv("HOME"), "go", "bin")
+			}
+		}
+		gobinSuffixed := path.Join(gobin, fmt.Sprintf("windows_%s", runtime.GOARCH))
+		exeBuiltPath := path.Join(gobinSuffixed, "wsl-open-proxy.exe")
+		if err := os.Rename(exeBuiltPath, exeInstallPath); err != nil {
+			return errors.Wrap(err, "failed to move wsl-open-proxy.exe")
+		}
 	} else {
-		fmt.Fprintf(os.Stderr, "Installing wsl-open-proxy.exe...\n")
+		fmt.Fprintf(os.Stderr, "Installing prebuilt wsl-open-proxy.exe...\n")
 		if err := os.WriteFile(exeInstallPath, exeFile, 0755); err != nil {
 			return errors.Wrap(err, "failed to write wsl-open-proxy.exe")
 		}
