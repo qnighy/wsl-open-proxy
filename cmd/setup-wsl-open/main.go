@@ -56,6 +56,7 @@ var mediaGroups = map[string][]mimeEntry{
 }
 
 func main() {
+	updateBin := false
 	mediaGroupName := "html"
 	var rootCmd = &cobra.Command{
 		Use:     "setup-wsl-open",
@@ -69,13 +70,14 @@ func main() {
 				return errors.Errorf("Unknown media group: %s", mediaGroupName)
 			}
 			cmd.SilenceUsage = true
-			return run(cmd.Context(), mediaGroupName)
+			return run(cmd.Context(), updateBin, mediaGroupName)
 		},
 	}
 	mediaGroupNames := make([]string, 0, len(mediaGroups))
 	for name := range mediaGroups {
 		mediaGroupNames = append(mediaGroupNames, name)
 	}
+	rootCmd.Flags().BoolVarP(&updateBin, "update", "u", updateBin, "Update wsl-open-proxy.exe even if it is already installed")
 	rootCmd.Flags().StringVarP(&mediaGroupName, "type", "t", mediaGroupName, fmt.Sprintf("Media group to install (One of: %v)", mediaGroupNames))
 
 	err := rootCmd.Execute()
@@ -85,43 +87,55 @@ func main() {
 	}
 }
 
-func run(ctx context.Context, mediaGroupName string) error {
+func run(ctx context.Context, updateBin bool, mediaGroupName string) error {
 	_ = ctx
 
 	exeInstallPath := path.Join(xdg.BinHome, "wsl-open-proxy.exe")
-	exeFile, err := assets.ReadFile(fmt.Sprintf("assets/wsl-open-proxy-%s.exe", runtime.GOARCH))
+	installBin := updateBin
+	_, err := os.Stat(exeInstallPath)
 	if err != nil && !os.IsNotExist(err) {
-		return errors.Wrap(err, "failed to read wsl-open-proxy.exe in assets")
+		return errors.Wrap(err, "failed to check existence of wsl-open-proxy.exe")
 	} else if err != nil && os.IsNotExist(err) {
-		fmt.Fprintf(os.Stderr, "Building wsl-open-proxy.exe from source...\n")
-		// Not found; alternative installation
-		cmd := exec.Command("go", "install", fmt.Sprintf("github.com/qnighy/wsl-open-proxy/cmd/wsl-open-proxy@v%s", wslopenproxy.Version))
-		cmd.Env = append(os.Environ(), "GOOS=windows", fmt.Sprintf("GOARCH=%s", runtime.GOARCH))
-		_, err := cmd.Output()
-		if err != nil {
-			return errors.Wrap(err, "failed to build wsl-open-proxy.exe from source")
-		}
+		installBin = true
+	}
 
-		fmt.Fprintf(os.Stderr, "Installing wsl-open-proxy.exe built from source...\n")
-		gobin := os.Getenv("GOBIN")
-		if gobin == "" {
-			gopath := os.Getenv("GOPATH")
-			if gopath != "" {
-				gobin = path.Join(os.Getenv("GOPATH"), "bin")
-			} else {
-				gobin = path.Join(os.Getenv("HOME"), "go", "bin")
+	if installBin {
+		exeFile, err := assets.ReadFile(fmt.Sprintf("assets/wsl-open-proxy-%s.exe", runtime.GOARCH))
+		if err != nil && !os.IsNotExist(err) {
+			return errors.Wrap(err, "failed to read wsl-open-proxy.exe in assets")
+		} else if err != nil && os.IsNotExist(err) {
+			fmt.Fprintf(os.Stderr, "Building wsl-open-proxy.exe from source...\n")
+			// Not found; alternative installation
+			cmd := exec.Command("go", "install", fmt.Sprintf("github.com/qnighy/wsl-open-proxy/cmd/wsl-open-proxy@v%s", wslopenproxy.Version))
+			cmd.Env = append(os.Environ(), "GOOS=windows", fmt.Sprintf("GOARCH=%s", runtime.GOARCH))
+			_, err := cmd.Output()
+			if err != nil {
+				return errors.Wrap(err, "failed to build wsl-open-proxy.exe from source")
+			}
+
+			fmt.Fprintf(os.Stderr, "Installing wsl-open-proxy.exe built from source...\n")
+			gobin := os.Getenv("GOBIN")
+			if gobin == "" {
+				gopath := os.Getenv("GOPATH")
+				if gopath != "" {
+					gobin = path.Join(os.Getenv("GOPATH"), "bin")
+				} else {
+					gobin = path.Join(os.Getenv("HOME"), "go", "bin")
+				}
+			}
+			gobinSuffixed := path.Join(gobin, fmt.Sprintf("windows_%s", runtime.GOARCH))
+			exeBuiltPath := path.Join(gobinSuffixed, "wsl-open-proxy.exe")
+			if err := os.Rename(exeBuiltPath, exeInstallPath); err != nil {
+				return errors.Wrap(err, "failed to move wsl-open-proxy.exe")
+			}
+		} else {
+			fmt.Fprintf(os.Stderr, "Installing prebuilt wsl-open-proxy.exe...\n")
+			if err := os.WriteFile(exeInstallPath, exeFile, 0755); err != nil {
+				return errors.Wrap(err, "failed to write wsl-open-proxy.exe")
 			}
 		}
-		gobinSuffixed := path.Join(gobin, fmt.Sprintf("windows_%s", runtime.GOARCH))
-		exeBuiltPath := path.Join(gobinSuffixed, "wsl-open-proxy.exe")
-		if err := os.Rename(exeBuiltPath, exeInstallPath); err != nil {
-			return errors.Wrap(err, "failed to move wsl-open-proxy.exe")
-		}
 	} else {
-		fmt.Fprintf(os.Stderr, "Installing prebuilt wsl-open-proxy.exe...\n")
-		if err := os.WriteFile(exeInstallPath, exeFile, 0755); err != nil {
-			return errors.Wrap(err, "failed to write wsl-open-proxy.exe")
-		}
+		fmt.Fprintf(os.Stderr, "wsl-open-proxy.exe is already installed\n")
 	}
 
 	mediaGroup, ok := mediaGroups[mediaGroupName]
@@ -129,6 +143,7 @@ func run(ctx context.Context, mediaGroupName string) error {
 		return errors.Errorf("Unknown media group: %s", mediaGroupName)
 	}
 
+	fmt.Fprintf(os.Stderr, "Registering desktop entries for %s files...\n", mediaGroupName)
 	for _, mimeEntry := range mediaGroup {
 		desktopEntry := &xdgini.Config{
 			Groups: map[string]*xdgini.ConfigGroup{
@@ -155,6 +170,7 @@ func run(ctx context.Context, mediaGroupName string) error {
 		}
 	}
 
+	fmt.Fprintf(os.Stderr, "Registering mime associations...\n")
 	mimeAppsListPath := path.Join(xdg.ConfigHome, "mimeapps.list")
 	mimeAppsListText, err := os.ReadFile(mimeAppsListPath)
 	if err != nil && !os.IsNotExist(err) {
@@ -177,6 +193,7 @@ func run(ctx context.Context, mediaGroupName string) error {
 	); err != nil {
 		return errors.Wrap(err, "failed to mime association file")
 	}
+	fmt.Fprintf(os.Stderr, "Done\n")
 	return nil
 }
 
