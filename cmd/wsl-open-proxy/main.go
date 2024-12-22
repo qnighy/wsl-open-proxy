@@ -10,6 +10,7 @@ import (
 	"unsafe"
 
 	"github.com/pkg/errors"
+	wslopenproxy "github.com/qnighy/wsl-open-proxy"
 	"github.com/spf13/cobra"
 	"golang.org/x/sys/windows"
 )
@@ -22,7 +23,8 @@ const NULL = 0
 func main() {
 	var ext string
 	var rootCmd = &cobra.Command{
-		Use: "wsl-open-proxy file",
+		Use:     "wsl-open-proxy file",
+		Version: wslopenproxy.Version,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) < 1 {
 				return errors.New("file is required")
