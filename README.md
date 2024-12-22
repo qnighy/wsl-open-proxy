@@ -24,6 +24,15 @@ $ go run github.com/qnighy/wsl-open-proxy/cmd/setup-wsl-open@latest -t image
 
 ### Installing a prebuilt executable
 
+Download the prebuilt setup command `setup-wsl-open` from
+[the Releases page](https://github.com/qnighy/wsl-open-proxy/releases).
+
+```console
+$ ./setup-wsl-open
+# Or, for configuring the proxy for other filetypes than HTML:
+$ ./setup-wsl-open -t image
+```
+
 To be filled later
 
 ## Development tips
